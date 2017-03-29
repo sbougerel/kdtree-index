@@ -350,14 +350,17 @@ namespace kdtree_index
 			node_dim = child_dim;
 			node_offset = child_offset;
 		}
-		iterator child = left(node, node_offset);
-		if (child->is_valid()
-		    && !select_compare(fixed_dim, best->value(), child->value(), index))
-		{ best = child; }
-		child = right(node, node_offset);
-		if (child->is_valid()
-		    && !select_compare(fixed_dim, best->value(), child->value(), index))
-		{ best = child; }
+		if (node_offset == 1)
+		{
+			iterator child = left(node, node_offset);
+			if (child->is_valid()
+			    && !select_compare(fixed_dim, best->value(), child->value(), index))
+			{ best = child; }
+			child = right(node, node_offset);
+			if (child->is_valid()
+			    && !select_compare(fixed_dim, best->value(), child->value(), index))
+			{ best = child; }
+		}
 		return best;
 	}
 
@@ -392,14 +395,17 @@ namespace kdtree_index
 			node_dim = child_dim;
 			node_offset = child_offset;
 		}
-		iterator child = left(node, node_offset);
-		if (child->is_valid()
-		    && !select_compare(fixed_dim, child->value(), best->value(), index))
-		{ best = child; }
-		child = right(node, node_offset);
-		if (child->is_valid()
-		    && !select_compare(fixed_dim, child->value(), best->value(), index))
-		{ best = child; }
+		if (node_offset == 1)
+		{
+			iterator child = left(node, node_offset);
+			if (child->is_valid()
+			    && !select_compare(fixed_dim, child->value(), best->value(), index))
+			{ best = child; }
+			child = right(node, node_offset);
+			if (child->is_valid()
+			    && !select_compare(fixed_dim, child->value(), best->value(), index))
+			{ best = child; }
+		}
 		return best;
 	}
 
@@ -674,30 +680,41 @@ namespace kdtree_index
 		                      const iterator& node,
 		                      const iterator& erased) const noexcept
 		{
-			if (node_offset == 0) // end of the descent
+			if (node_offset > 1) // end of the descent
 			{
-				node->state() = State::Invalid;
-				return;
+				dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
+				typename iterator::difference_type child_offset = node_offset / 2;
+				iterator lnode = left(node, node_offset);
+				iterator rnode = right(node, node_offset);
+				if (node == erased)
+				{
+					iterator tmp = minimum(node_dim, child_dim, child_offset,
+					                       rnode, get_index());
+					std::memcpy(erased->value_ptr(), tmp->value_ptr(),
+					            sizeof(value_type));
+					_erase_when_full(child_dim, child_offset, rnode, tmp);
+				}
+				// find erased node by memory locality
+				else if (node->value_ptr() < erased->value_ptr())
+				{ _erase_when_full(child_dim, child_offset, rnode, erased); }
+				else
+				{ _erase_when_full(child_dim, child_offset, lnode, erased); }
+				// Fix states before returning
+				node->state() = State::Unsure;
 			}
-			dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
-			typename iterator::difference_type child_offset = node_offset / 2;
-			iterator lnode = left(node, node_offset);
-			iterator rnode = right(node, node_offset);
-			if (node == erased)
+			else if (node_offset == 1)
 			{
-				iterator tmp = minimum(node_dim, child_dim, child_offset,
-				                       rnode, get_index());
-				std::memcpy(erased->value_ptr(), tmp->value_ptr(),
-				            sizeof(value_type));
-				_erase_when_full(child_dim, child_offset, rnode, tmp);
+				iterator rnode = right(node, node_offset);
+				if (node == erased)
+				{
+					std::memcpy(node->value_ptr(), rnode->value_ptr(), sizeof(value_type));
+					rnode->state() = State::Invalid;
+				}
+				else { erased->state() = State::Invalid; }
+				node->state() = State::Unsure;
 			}
-			// find erased node by memory locality
-			else if (node->value_ptr() < erased->value_ptr())
-			{ _erase_when_full(child_dim, child_offset, rnode, erased); }
-			else
-			{ _erase_when_full(child_dim, child_offset, lnode, erased); }
-			// Fix states before returning
-			node->state() = State::Unsure;
+			else { node->state() = State::Invalid; }
+			return;
 		}
 
 		/**

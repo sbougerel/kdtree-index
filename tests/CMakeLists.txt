@@ -16,13 +16,12 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" AND USE_LIBCXX)
     message (STATUS "Building with Clang and libc++")
     set (CMAKE_CXX_FLAGS "-std=c++11 -stdlib=libc++ -pedantic-errors")
     set (CMAKE_EXE_LINKER_FLAGS "-lc++abi")
+  # Else use Clang compiler with system's default ABI
+  else ()
+    message(STATUS "Building with Clang")
+    set (CMAKE_CXX_FLAGS "-std=c++11 -pedantic-errors")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SPATIAL_GNU_WARNINGS}")
   endif ()
-  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SPATIAL_GNU_WARNINGS}")
-
-# Else use Clang compiler with system's default ABI
-elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-  message(STATUS "Building with Clang")
-  set (CMAKE_CXX_FLAGS "-std=c++11 -pedantic-errors")
   set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SPATIAL_GNU_WARNINGS}")
 
 # Use Gnu compiler with libstdc++ ABI

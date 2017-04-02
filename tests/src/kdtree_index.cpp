@@ -81,7 +81,9 @@ BOOST_AUTO_TEST_CASE(kdtree_move_constructor)
 BOOST_AUTO_TEST_CASE(kdtree_insert_one_unallocated)
 {
 	kdtree<my_indexable> tree;
-	tree.insert({1});
+	auto iter = tree.insert({1});
+	BOOST_CHECK_EQUAL(iter->is_valid(), true);
+	BOOST_CHECK_EQUAL(iter->value().a, 1);
 	BOOST_CHECK_EQUAL(1, tree.capacity());
 	BOOST_CHECK_EQUAL(1, tree.size());
 	BOOST_CHECK_EQUAL(false, tree.empty());
@@ -92,7 +94,9 @@ BOOST_AUTO_TEST_CASE(kdtree_insert_one_unallocated)
 BOOST_AUTO_TEST_CASE(kdtree_insert_one_allocated)
 {
 	kdtree<my_indexable> tree(10);
-	tree.insert({1});
+	auto iter = tree.insert({1});
+	BOOST_CHECK_EQUAL(iter->is_valid(), true);
+	BOOST_CHECK_EQUAL(iter->value().a, 1);
 	BOOST_CHECK_EQUAL(15, tree.capacity());
 	BOOST_CHECK_EQUAL(1, tree.size());
 	BOOST_CHECK_EQUAL(false, tree.empty());
@@ -104,7 +108,12 @@ BOOST_AUTO_TEST_CASE(kdtree_insert_ascending)
 {
 	constexpr int Max = 30;
 	kdtree<my_indexable> tree(Max);
-	for (int i = 0; i < Max; ++i) tree.insert({i + 1});
+	for (int i = 0; i < Max; ++i)
+	{
+		auto iter = tree.insert({i + 1});
+		BOOST_CHECK_EQUAL(iter->is_valid(), true);
+		BOOST_CHECK_EQUAL(iter->value().a, i + 1);
+	}
 	BOOST_CHECK_EQUAL(details::bitwise<int>::ftz(Max), tree.capacity());
 	BOOST_CHECK_EQUAL(Max, tree.size());
 	BOOST_CHECK_EQUAL(false, tree.empty());
@@ -130,7 +139,12 @@ BOOST_AUTO_TEST_CASE(kdtree_insert_descending)
 {
 	constexpr int Max = 30;
 	kdtree<my_indexable> tree(Max);
-	for (int i = 0; i < Max; ++i) tree.insert({Max - i});
+	for (int i = 0; i < Max; ++i)
+	{
+		auto iter = tree.insert({Max - i});
+		BOOST_CHECK_EQUAL(iter->is_valid(), true);
+		BOOST_CHECK_EQUAL(iter->value().a, Max - i);
+	}
 	BOOST_CHECK_EQUAL(details::bitwise<int>::ftz(Max), tree.capacity());
 	BOOST_CHECK_EQUAL(Max, tree.size());
 	BOOST_CHECK_EQUAL(false, tree.empty());

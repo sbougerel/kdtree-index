@@ -728,7 +728,53 @@ namespace kdtree_index
 		                         const DeferredOp& defer) const
 			noexcept(noexcept(defer.place_at(node->value_ptr())))
 		{
-			if (offset > 1)
+			if (offset == 1)
+			{
+				iterator lnode = left(node, offset);
+				iterator rnode = right(node, offset);
+				if (select_compare(node_dim, defer.cref(), node->value(), get_index()))
+				{
+					if (lnode->is_valid())
+					{
+						std::memcpy(rnode->value_ptr(), node->value_ptr(), sizeof(value_type));
+						rnode->state() = _impl._full_state;
+						if (select_compare(node_dim, defer.cref(), lnode->value(), get_index()))
+						{
+							std::memcpy(node->value_ptr(), lnode->value_ptr(), sizeof(value_type));
+							defer.place_at(lnode->value_ptr());
+						}
+						node->state() = _impl._full_state;
+					}
+					else
+					{
+						defer.place_at(lnode->value_ptr());
+						lnode->state() = _impl._full_state;
+						if (rnode->is_valid()) { node->state() = _impl._full_state; }
+					}
+				}
+				else
+				{
+					if (rnode->is_valid())
+					{
+						std::memcpy(lnode->value_ptr(), node->value_ptr(), sizeof(value_type));
+						lnode->state() = _impl._full_state;
+						if (select_compare(node_dim, rnode->value(), defer.cref(), get_index()))
+						{
+							std::memcpy(node->value_ptr(), rnode->value_ptr(), sizeof(value_type));
+							defer.place_at(rnode->value_ptr());
+						}
+						node->state() = _impl._full_state;
+					}
+					else
+					{
+						defer.place_at(rnode->value_ptr());
+						rnode->state() = _impl._full_state;
+						if (lnode->is_valid()) { node->state() = _impl._full_state; }
+					}
+				}
+				return node;
+			}
+			else if (offset != 0)
 			{
 				dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
 				typename iterator::difference_type child_offset = offset / 2;
@@ -791,56 +837,13 @@ namespace kdtree_index
 				node->state() = lnode->state() + rnode->state();
 				return insert;
 			}
-			if (offset == 1)
+			else
 			{
-				iterator lnode = left(node, offset);
-				iterator rnode = right(node, offset);
-				if (select_compare(node_dim, defer.cref(), node->value(), get_index()))
-				{
-					if (lnode->is_valid())
-					{
-						std::memcpy(rnode->value_ptr(), node->value_ptr(), sizeof(value_type));
-						rnode->state() = _impl._full_state;
-						if (select_compare(node_dim, defer.cref(), lnode->value(), get_index()))
-						{
-							std::memcpy(node->value_ptr(), lnode->value_ptr(), sizeof(value_type));
-							defer.place_at(lnode->value_ptr());
-						}
-						node->state() = _impl._full_state;
-					}
-					else
-					{
-						defer.place_at(lnode->value_ptr());
-						lnode->state() = _impl._full_state;
-						if (rnode->is_valid()) { node->state() = _impl._full_state; }
-					}
-				}
-				else
-				{
-					if (rnode->is_valid())
-					{
-						std::memcpy(lnode->value_ptr(), node->value_ptr(), sizeof(value_type));
-						lnode->state() = _impl._full_state;
-						if (select_compare(node_dim, rnode->value(), defer.cref(), get_index()))
-						{
-							std::memcpy(node->value_ptr(), rnode->value_ptr(), sizeof(value_type));
-							defer.place_at(rnode->value_ptr());
-						}
-						node->state() = _impl._full_state;
-					}
-					else
-					{
-						defer.place_at(rnode->value_ptr());
-						rnode->state() = _impl._full_state;
-						if (lnode->is_valid()) { node->state() = _impl._full_state; }
-					}
-				}
+				// offset == 0, necessarily empty
+				defer.place_at(node->value_ptr());
+				node->state() = _impl._full_state;
 				return node;
 			}
-			// offset == 0, necessarily empty
-			defer.place_at(node->value_ptr());
-			node->state() = _impl._full_state;
-			return node;
 		}
 
 		iterator

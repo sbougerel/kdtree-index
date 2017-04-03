@@ -106,7 +106,7 @@ BOOST_AUTO_TEST_CASE(kdtree_insert_one_allocated)
 
 BOOST_AUTO_TEST_CASE(kdtree_insert_ascending)
 {
-	constexpr int Max = 30;
+	constexpr int Max = 13;
 	kdtree<my_indexable> tree(Max);
 	for (int i = 0; i < Max; ++i)
 	{
@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(kdtree_insert_ascending)
 
 BOOST_AUTO_TEST_CASE(kdtree_insert_descending)
 {
-	constexpr int Max = 30;
+	constexpr int Max = 13;
 	kdtree<my_indexable> tree(Max);
 	for (int i = 0; i < Max; ++i)
 	{
@@ -166,22 +166,59 @@ BOOST_AUTO_TEST_CASE(kdtree_insert_descending)
 	BOOST_CHECK_EQUAL(check_count, Max);
 }
 
+BOOST_AUTO_TEST_CASE(kdtree_insert_scrambled)
+{
+	// Scramble insertion on purpose to trigger all rebalancing situations
+	constexpr int Max = 5;
+	kdtree<my_indexable> tree(Max);
+	auto iter = tree.insert({3});
+	BOOST_CHECK_EQUAL(iter->is_valid(), true);
+	BOOST_CHECK_EQUAL(iter->value().a, 3);
+	iter = tree.insert({1});
+	BOOST_CHECK_EQUAL(iter->is_valid(), true);
+	BOOST_CHECK_EQUAL(iter->value().a, 1);
+	iter = tree.insert({2});
+	BOOST_CHECK_EQUAL(iter->is_valid(), true);
+	BOOST_CHECK_EQUAL(iter->value().a, 2);
+	iter = tree.insert({5});
+	BOOST_CHECK_EQUAL(iter->is_valid(), true);
+	BOOST_CHECK_EQUAL(iter->value().a, 5);
+	iter = tree.insert({4});
+	BOOST_CHECK_EQUAL(iter->is_valid(), true);
+	BOOST_CHECK_EQUAL(iter->value().a, 4);
+	BOOST_CHECK_EQUAL(details::bitwise<int>::ftz(Max), tree.capacity());
+	BOOST_CHECK_EQUAL(Max, tree.size());
+	BOOST_CHECK_EQUAL(false, tree.empty());
+	BOOST_CHECK(tree.begin() != tree.end());
+	int check_count = 0;
+	int check_seq_val = 0;
+	for (auto ref : tree)
+	{
+		if (ref.is_valid())
+		{
+			++check_count;
+			BOOST_CHECK_LT(check_seq_val, ref.value().a);
+			check_seq_val = ref.value().a;
+			// std::cout << ref.value().a << std::endl;
+		}
+		// else std::cout << "Invalid" << std::endl;
+	}
+	BOOST_CHECK_EQUAL(check_seq_val, Max);
+	BOOST_CHECK_EQUAL(check_count, Max);
+}
+
 BOOST_AUTO_TEST_CASE(kdtree_insert_all_same)
 {
-	kdtree<my_indexable> tree;
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	tree.insert({2});
-	BOOST_CHECK_EQUAL(15, tree.capacity());
-	BOOST_CHECK_EQUAL(11, tree.size());
+	constexpr int Max = 11;
+	kdtree<my_indexable> tree(Max);
+	for (int i = 0; i < Max; ++i)
+	{
+		auto iter = tree.insert({2});
+		BOOST_CHECK_EQUAL(iter->is_valid(), true);
+		BOOST_CHECK_EQUAL(iter->value().a, 2);
+	}
+	BOOST_CHECK_EQUAL(details::bitwise<int>::ftz(Max), tree.capacity());
+	BOOST_CHECK_EQUAL(Max, tree.size());
 	BOOST_CHECK_EQUAL(false, tree.empty());
 	BOOST_CHECK(tree.begin() != tree.end());
 	int check_count = 0;
@@ -196,4 +233,25 @@ BOOST_AUTO_TEST_CASE(kdtree_insert_all_same)
 		// else std::cout << "Invalid" << std::endl;
 	}
 	BOOST_CHECK_EQUAL(check_count, 11);
+}
+
+BOOST_AUTO_TEST_CASE(kdtree_find)
+{
+	// find all nodes in the tree
+	constexpr int Max = 11;
+	kdtree<my_indexable> tree(Max);
+	for (int i = 0; i < Max; ++i)
+	{ tree.insert({i}); }
+	for (int i = 0; i < Max; ++i)
+	{
+		auto iter = tree.find({i});
+		BOOST_CHECK_EQUAL(iter->is_valid(), true);
+		BOOST_CHECK_EQUAL(iter->value().a, i);
+	}
+	for (int i = 0; i < Max; ++i)
+	{
+		auto iter = static_cast<const kdtree<my_indexable>&>(tree).find({i});
+		BOOST_CHECK_EQUAL(iter->is_valid(), true);
+		BOOST_CHECK_EQUAL(iter->value().a, i);
+	}
 }

@@ -255,3 +255,26 @@ BOOST_AUTO_TEST_CASE(kdtree_find)
 		BOOST_CHECK_EQUAL(iter->value().a, i);
 	}
 }
+
+BOOST_AUTO_TEST_CASE(kdtree_erase_by_value)
+{
+	// erase all nodes in the tree, by value
+	constexpr int Max = 11;
+	kdtree<my_indexable> tree(Max);
+	for (int i = 0; i < Max; ++i)
+	{ tree.insert({i}); }
+	BOOST_CHECK_EQUAL(Max, tree.size());
+	for (int i = 0; i < Max; ++i)
+	{
+		auto count = tree.erase({i});
+		BOOST_CHECK_EQUAL(count, 1);
+		BOOST_CHECK_EQUAL(tree.size(), Max - i - 1);
+	}
+	// This time all nodes are of the same value, and they should all be erased
+	for (int i = 0; i < Max; ++i)
+	{ tree.insert({3}); }
+	BOOST_CHECK_EQUAL(Max, tree.size());
+	auto count = tree.erase({3});
+	BOOST_CHECK_EQUAL(count, Max);
+	BOOST_CHECK_EQUAL(tree.size(), 0);
+}

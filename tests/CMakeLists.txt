@@ -53,7 +53,7 @@ add_executable (tests
   src/details_bitwise.cpp)
 
 if (MSVC)
-  set_target_properties (verify PROPERTIES COMPILE_FLAGS "/EHa")
+  set_target_properties (tests PROPERTIES COMPILE_FLAGS "/EHa")
 endif ()
 
 target_link_libraries(tests ${Boost_LIBRARIES})

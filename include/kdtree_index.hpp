@@ -218,11 +218,15 @@ namespace kdtree_index
 		 *  to discard copy constructor overload.
 		 */
 		template<typename OtherPtr>
-		kdtree_iterator(const kdtree_iterator
+		kdtree_iterator(const kdtree_iterator<OtherPtr,
+		                typename std::remove_const
+		                <typename std::remove_pointer
 		                <typename std::enable_if
-		                <std::is_same<const OtherPtr, ValuePtr>::value,
-		                OtherPtr>::type, std::remove_const<StatePtr> >& x) noexcept
-			: _elem(x._elem.value_ptr(), x._elem.state_ptr()) { }
+		                <std::is_same
+		                <const typename std::remove_pointer<OtherPtr>::type*,
+		                ValuePtr>::value, StatePtr>::type>::type>::type*>& x)
+			noexcept
+			: _elem(x->value_ptr(), x->state_ptr()) { }
 
 		kdtree_iterator operator++() noexcept
 		{
@@ -707,7 +711,8 @@ namespace kdtree_index
 				iterator rnode = right(node, node_offset);
 				if (node == erased)
 				{
-					std::memcpy(node->value_ptr(), rnode->value_ptr(), sizeof(value_type));
+					std::memcpy(node->value_ptr(), rnode->value_ptr(),
+					            sizeof(value_type));
 					rnode->state() = State::Invalid;
 				}
 				else { erased->state() = State::Invalid; }
@@ -867,44 +872,50 @@ namespace kdtree_index
 		      typename iterator::difference_type node_offset,
 		      iterator node, const value_type& val) const noexcept
 		{
-			for (;;)
+			for (; node->is_valid();)
 			{
-				if (!node->is_valid()) { return _impl._finish; }
-				dimension_type i;
-				for (i = 0; i < node_dim; i++)
-				{
-					if (select_compare(i, node->value(), val, get_index())
-					    || select_compare(i, val, node->value(), get_index()))
-					{ break; }
-				}
 				bool left_only
 					= select_compare(node_dim, val, node->value(), get_index());
 				bool right_only
 					= select_compare(node_dim, node->value(), val, get_index());
-				if (i == node_dim && !left_only && !right_only)
+				if (!left_only && !right_only)
 				{
-					for (; i < indexable_type::kth(); i++)
+					dimension_type i = 0;
+					for (; i < node_dim; ++i)
 					{
 						if (select_compare(i, node->value(), val, get_index())
 						    || select_compare(i, val, node->value(), get_index()))
 						{ break; }
 					}
-					if (i == indexable_type::kth()) { return node; }
+					if (i == node_dim)
+					{
+						for (++i; i < indexable_type::kth(); ++i)
+						{
+							if (select_compare(i, node->value(), val, get_index())
+							    || select_compare(i, val, node->value(), get_index()))
+							{ break; }
+						}
+						if (i == indexable_type::kth()) { return node; }
+					}
 				}
-				if (node_offset == 0) return _impl._finish;
-				dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
-				auto child_offset = node_offset / 2;
-				if (!right_only)
+				if (node_offset != 0)
 				{
-					iterator probe = _find(child_dim, child_offset,
-					                       left(node, node_offset), val);
-					if (probe != _impl._finish) { return probe; }
+					dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
+					auto child_offset = node_offset / 2;
+					if (!right_only)
+					{
+						iterator probe = _find(child_dim, child_offset,
+						                       left(node, node_offset), val);
+						if (probe != _impl._finish) { return probe; }
+					}
+					if (left_only) { break; }
+					node = right(node, node_offset);
+					node_dim = child_dim;
+					node_offset = child_offset;
 				}
-				if (left_only) { return _impl._finish; }
-				node = right(node, node_offset);
-				node_dim = child_dim;
-				node_offset = child_offset;
+				else { break; }
 			}
+			return _impl._finish;
 		}
 
 	public:
@@ -1053,7 +1064,7 @@ namespace kdtree_index
 		find(const value_type& val) const noexcept
 		{
 			auto dist = _impl._finish - _impl._start;
-			return (_impl._count == 0) ? _impl._finish
+			return (_impl._count == 0) ? const_iterator(_impl._finish)
 				: _find(0, root_offset(dist), root(_impl._start, dist), val);
 		}
 	};

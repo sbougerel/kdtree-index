@@ -45,7 +45,9 @@ endif ()
 
 # The test exectuables that check correctness
 add_executable (min_max min_max.cpp)
+add_executable (find find.cpp)
 
 if (MSVC)
-  set_target_properties (verify PROPERTIES COMPILE_FLAGS "/EHa")
+  set_target_properties (min_max PROPERTIES COMPILE_FLAGS "/EHa")
+  set_target_properties (find PROPERTIES COMPILE_FLAGS "/EHa")
 endif ()

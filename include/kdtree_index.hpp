@@ -675,38 +675,64 @@ namespace kdtree_index
 		}
 
 		/**
+		 *  This function is to be called only when node is free. It will find the
+		 *  position to insert value and set all nodes on the way to Unsure.
+		 */
+		void _insert_when_free(dimension_type node_dim,
+		                       typename iterator::difference_type node_offset,
+		                       iterator node, iterator insert)
+			const noexcept
+		{
+			while (node_offset != 0)
+			{
+				node->state() = State::Unsure;
+				if (select_compare(node_dim, insert->value(), node->value(),
+				                   get_index()))
+				{ node = left(node, node_offset); }
+				else
+				{ node = right(node, node_offset); }
+				node_dim = inc<indexable_type::kth()>(node_dim);
+				node_offset = node_offset / 2;
+			}
+			node->state() = _impl._full_state;
+			std::memcpy(node->value_ptr(), insert->value_ptr(),
+			            sizeof(value_type));
+			return;
+		}
+
+		/**
 		 *  This function is to be called only when node is full. It will not
 		 *  proceed to actual detruction of "erased", so it is important that the
 		 *  caller destroys "erased" before calling the function.
 		 */
 		void _erase_when_full(dimension_type node_dim,
 		                      typename iterator::difference_type node_offset,
-		                      const iterator& node,
-		                      const iterator& erased) const noexcept
+		                      iterator node, iterator erased) const noexcept
 		{
-			if (node_offset > 1)
+			while (node_offset > 1)
 			{
 				dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
 				typename iterator::difference_type child_offset = node_offset / 2;
-				iterator lnode = left(node, node_offset);
-				iterator rnode = right(node, node_offset);
+				node->state() = State::Unsure;
 				if (node == erased)
 				{
+					iterator rnode = right(node, node_offset);
 					iterator tmp = minimum(node_dim, child_dim, child_offset,
 					                       rnode, get_index());
 					std::memcpy(erased->value_ptr(), tmp->value_ptr(),
 					            sizeof(value_type));
-					_erase_when_full(child_dim, child_offset, rnode, tmp);
+					erased = tmp;
+					node = rnode;
 				}
 				// find erased node by memory locality
 				else if (node->value_ptr() < erased->value_ptr())
-				{ _erase_when_full(child_dim, child_offset, rnode, erased); }
+				{ node = right(node, node_offset); }
 				else
-				{ _erase_when_full(child_dim, child_offset, lnode, erased); }
-				// Fix states before returning
-				node->state() = State::Unsure;
+				{ node = left(node, node_offset); }
+				node_dim = child_dim;
+				node_offset = child_offset;
 			}
-			else if (node_offset == 1)
+			if (node_offset == 1)
 			{
 				iterator rnode = right(node, node_offset);
 				if (node == erased)

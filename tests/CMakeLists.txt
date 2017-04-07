@@ -6,7 +6,7 @@ option (USE_LIBCXX "Force libc++ with Clang?" ON)
 find_package (Boost REQUIRED COMPONENTS unit_test_framework)
 
 # A whole bunch of warnings we are interested in
-set (SPATIAL_GNU_WARNINGS "-Wall -Wextra -Wshadow -Wcast-qual -Wconversion -Wsign-conversion -Wformat")
+set (SPATIAL_GNU_WARNINGS "-Wall -Wextra -Wshadow -Wcast-qual -Wconversion -Wsign-conversion -Wformat -Wstrict-aliasing")
 
 # Use Clang with libc++ ABI, like on Apple OS (only supports C++11)
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang" AND USE_LIBCXX)

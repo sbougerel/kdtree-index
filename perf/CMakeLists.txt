@@ -4,7 +4,7 @@ project (kdtree_index_perf)
 option (USE_LIBCXX "Force libc++ with Clang?" ON)
 
 # A whole bunch of warnings we are interested in
-set (SPATIAL_GNU_WARNINGS "-Wall -Wextra -Wshadow -Wcast-qual -Wconversion -Wsign-conversion -Wformat")
+set (SPATIAL_GNU_WARNINGS "-Wall -Wextra -Wshadow -Wcast-qual -Wconversion -Wsign-conversion -Wformat -Wstrict-aliasing")
 
 # Use Clang with libc++ ABI, like on Apple OS (only supports C++11)
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")

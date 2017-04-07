@@ -504,6 +504,9 @@ namespace kdtree_index
 		 *  Create initial storage for the flat tree. Always allocate the smallest
 		 *  power of 2 that fits the requested size so that a perfectly balanced
 		 *  tree fits in.
+		 *
+		 *  _alloc_storage may throw but will leave the tree in a consistent state
+		 *  if it does.
 		 */
 		void _alloc_storage(std::size_t n)
 		{
@@ -554,7 +557,7 @@ namespace kdtree_index
 			_impl._finish.reset(vp + offset + 1, cp + offset + 1);
 		}
 
-		void _expand_alloc()
+		void _alloc_expand()
 		{
 			std::size_t n = (_impl._capacity * 2) + 1;
 			value_pointer vp = value_alloc_traits::allocate(_get_value_alloc(), n);
@@ -566,6 +569,7 @@ namespace kdtree_index
 				value_alloc_traits::deallocate(_get_value_alloc(), vp, n);
 				throw;
 			}
+			// code above may throw but will leave the tree in a consistent state
 			_expand(vp, cp);
 			value_alloc_traits::deallocate(_get_value_alloc(),
 			                               _impl._start->value_ptr(), _impl._capacity);
@@ -575,7 +579,7 @@ namespace kdtree_index
 			_impl._capacity = n;
 		}
 
-		void _prepare_insert()
+		iterator _alloc_insert(const value_type& val)
 		{
 			if (_impl._count == 0)
 			{
@@ -586,10 +590,14 @@ namespace kdtree_index
 			else
 				if (_impl._count == static_cast<std::size_t>(_impl._finish - _impl._start))
 				{
-					if (_impl._count == _impl._capacity) { _expand_alloc(); }
+					if (_impl._count == _impl._capacity) { _alloc_expand(); }
 					else { _expand(_impl._start->value_ptr(), _impl._start->state_ptr()); }
 					_impl._full_state = ~_impl._full_state;
 				}
+			// code above may throw but will leave the tree in a consistent state
+			++_impl._count;
+			auto dist = _impl._finish - _impl._start;
+			return _place_insert(0, root_offset(dist), root(_impl._start, dist), val);
 		}
 
 		/**
@@ -634,35 +642,6 @@ namespace kdtree_index
 			_impl._count = 0;
 		}
 
-		struct _deferred_memcpy
-		{
-			explicit _deferred_memcpy(value_pointer x) noexcept : p(x) { }
-			void place_at(value_pointer x) const noexcept
-			{ std::memcpy(x, p, sizeof(value_type)); }
-			const value_type& cref() const noexcept { return *p; }
-			value_pointer p;
-		};
-
-		struct _deferred_copy
-		{
-			explicit _deferred_copy(const value_type& x) noexcept : p(x) { }
-			void place_at(value_pointer x) const
-				noexcept(std::is_nothrow_copy_constructible<value_type>::value)
-			{ new(x) value_type(p); }
-			const value_type& cref() const noexcept { return p; }
-			const value_type& p;
-		};
-
-		struct _deferred_move
-		{
-			explicit _deferred_move(value_type&& x) noexcept : p(std::move(x)) { }
-			void place_at(value_pointer x) const
-				noexcept(std::is_nothrow_move_constructible<value_type>::value)
-			{ new(x) value_type(std::move(p)); }
-			const value_type& cref() const noexcept { return p; }
-			value_type&& p;
-		};
-
 		/**
 		 *  List initialization works with the average O(n.log(n)) algorithm. This
 		 *  algorithm may have worst case performance of O(n^2).
@@ -698,6 +677,19 @@ namespace kdtree_index
 			std::memcpy(node->value_ptr(), insert->value_ptr(),
 			            sizeof(value_type));
 			return;
+		}
+
+		/**
+		 *  Find a position to insert v into the subtree (start, root) and balance
+		 *  all items along the way to make way for v.
+		 */
+		template<typename DeferredOp>
+		iterator _erase_by_value(dimension_type node_dim,
+		                         typename iterator::difference_type offset,
+		                         const iterator& node,
+		                         const value_type& val) const noexcept
+		{
+
 		}
 
 		/**
@@ -753,40 +745,33 @@ namespace kdtree_index
 		 *  Find a position to insert v into the subtree (start, root) and balance
 		 *  all items along the way to make way for v.
 		 */
-		template<typename DeferredOp>
-		iterator _single_insert(dimension_type node_dim,
-		                         typename iterator::difference_type offset,
-		                         const iterator& node,
-		                         const DeferredOp& defer) const
-			noexcept(noexcept(defer.place_at(node->value_ptr())))
+		iterator _place_insert(dimension_type node_dim,
+		                       typename iterator::difference_type offset,
+		                       const iterator& node,
+		                       const value_type& val) const noexcept
 		{
 			if (offset == 1)
 			{
 				iterator lnode = left(node, offset);
 				iterator rnode = right(node, offset);
 				iterator insert;
-				if (select_compare(node_dim, defer.cref(), node->value(), get_index()))
+				if (select_compare(node_dim, val, node->value(), get_index()))
 				{
 					if (lnode->is_valid())
 					{
 						std::memcpy(rnode->value_ptr(), node->value_ptr(), sizeof(value_type));
 						rnode->state() = _impl._full_state;
 						node->state() = _impl._full_state;
-						if (select_compare(node_dim, defer.cref(), lnode->value(), get_index()))
+						if (select_compare(node_dim, val, lnode->value(), get_index()))
 						{
 							std::memcpy(node->value_ptr(), lnode->value_ptr(), sizeof(value_type));
-							defer.place_at(lnode->value_ptr());
 							insert = lnode;
 						}
 						else
-						{
-							defer.place_at(node->value_ptr());
-							insert = node;
-						}
+						{ insert = node; }
 					}
 					else
 					{
-						defer.place_at(lnode->value_ptr());
 						lnode->state() = _impl._full_state;
 						if (rnode->is_valid()) { node->state() = _impl._full_state; }
 						insert = lnode;
@@ -799,21 +784,16 @@ namespace kdtree_index
 						std::memcpy(lnode->value_ptr(), node->value_ptr(), sizeof(value_type));
 						lnode->state() = _impl._full_state;
 						node->state() = _impl._full_state;
-						if (select_compare(node_dim, rnode->value(), defer.cref(), get_index()))
+						if (select_compare(node_dim, rnode->value(), val, get_index()))
 						{
 							std::memcpy(node->value_ptr(), rnode->value_ptr(), sizeof(value_type));
-							defer.place_at(rnode->value_ptr());
 							insert = rnode;
 						}
 						else
-						{
-							defer.place_at(node->value_ptr());
-							insert = node;
-						}
+						{ insert = node; }
 					}
 					else
 					{
-						defer.place_at(rnode->value_ptr());
 						rnode->state() = _impl._full_state;
 						if (lnode->is_valid()) { node->state() = _impl._full_state; }
 						insert = rnode;
@@ -828,57 +808,51 @@ namespace kdtree_index
 				iterator lnode = left(node, offset);
 				iterator rnode = right(node, offset);
 				iterator insert;
-				if (select_compare(node_dim, defer.cref(), node->value(), get_index()))
+				if (select_compare(node_dim, val, node->value(), get_index()))
 				{
 					if (lnode->state() == _impl._full_state)
 					{
-						_single_insert(child_dim, child_offset, rnode,
-						               _deferred_memcpy(node->value_ptr()));
-						iterator tmp = maximum(node_dim, child_dim, child_offset, lnode,
-						                       get_index());
-						if (select_compare(node_dim, defer.cref(), tmp->value(), get_index()))
+						iterator tmp
+							= _place_insert(child_dim, child_offset, rnode, node->value());
+						std::memcpy(tmp->value_ptr(), node->value_ptr(), sizeof(value_type));
+						tmp = maximum(node_dim, child_dim, child_offset, lnode, get_index());
+						if (select_compare(node_dim, val, tmp->value(), get_index()))
 						{
 							std::memcpy(node->value_ptr(), tmp->value_ptr(), sizeof(value_type));
 							_erase_when_full(child_dim, child_offset, lnode, tmp);
-							insert = _single_insert(child_dim, child_offset, lnode, defer);
+							insert = _place_insert(child_dim, child_offset, lnode, val);
 						}
 						else
-						{
-							defer.place_at(node->value_ptr());
-							insert = node;
-						}
+						{ insert = node; }
 					}
 					else
-					{ insert = _single_insert(child_dim, child_offset, lnode, defer); }
+					{ insert = _place_insert(child_dim, child_offset, lnode, val); }
 				}
-				else if (select_compare(node_dim, node->value(), defer.cref(), get_index()))
+				else if (select_compare(node_dim, node->value(), val, get_index()))
 				{
 					if (rnode->state() == _impl._full_state)
 					{
-						_single_insert(child_dim, child_offset, lnode,
-						               _deferred_memcpy(node->value_ptr()));
-						iterator tmp = minimum(node_dim, child_dim, child_offset, rnode,
-						                       get_index());
-						if (select_compare(node_dim, tmp->value(), defer.cref(), get_index()))
+						iterator tmp
+							= _place_insert(child_dim, child_offset, lnode, node->value());
+						std::memcpy(tmp->value_ptr(), node->value_ptr(), sizeof(value_type));
+						tmp = minimum(node_dim, child_dim, child_offset, rnode, get_index());
+						if (select_compare(node_dim, tmp->value(), val, get_index()))
 						{
 							std::memcpy(node->value_ptr(), tmp->value_ptr(), sizeof(value_type));
 							_erase_when_full(child_dim, child_offset, rnode, tmp);
-							insert = _single_insert(child_dim, child_offset, rnode, defer);
+							insert = _place_insert(child_dim, child_offset, rnode, val);
 						}
 						else
-						{
-							defer.place_at(node->value_ptr());
-							insert = node;
-						}
+						{ insert = node; }
 					}
 					else
-					{ insert = _single_insert(child_dim, child_offset, rnode, defer); }
+					{ insert = _place_insert(child_dim, child_offset, rnode, val); }
 				}
 				else
 				{
 					insert = (lnode->state() == _impl._full_state)
-						? _single_insert(child_dim, child_offset, rnode, defer)
-						: _single_insert(child_dim, child_offset, lnode, defer);
+						? _place_insert(child_dim, child_offset, rnode, val)
+						: _place_insert(child_dim, child_offset, lnode, val);
 				}
 				// modify state accordingly and return insert
 				node->state() = lnode->state() + rnode->state();
@@ -887,7 +861,6 @@ namespace kdtree_index
 			else
 			{
 				// offset == 0, necessarily empty
-				defer.place_at(node->value_ptr());
 				node->state() = _impl._full_state;
 				return node;
 			}
@@ -1048,32 +1021,36 @@ namespace kdtree_index
 		{ if (_impl._count != 0) _destroy(); }
 
 		iterator
-		insert(const value_type& v)
+		insert(const value_type& val)
 		{
-			_prepare_insert();
-			++_impl._count;
-			auto dist = _impl._finish - _impl._start;
-			return _single_insert(0, root_offset(dist), root(_impl._start, dist),
-			                      _deferred_copy(v));
+			typename std::aligned_storage<sizeof(value_type),
+			                              alignof(value_type)>::type data[1];
+			new(data) value_type(val);
+			// code above may throw but will leave the tree in a consistent state
+			iterator tmp = _alloc_insert(*reinterpret_cast<const_value_pointer>(data));
+			std::memcpy(tmp->value_ptr(), data, sizeof(value_type));
+			return tmp;
 		}
 
 		iterator
-		insert(value_type&& v)
+		insert(value_type&& val)
 		{
-			_prepare_insert();
-			++_impl._count;
-			auto dist = _impl._finish - _impl._start;
-			return _single_insert(0, root_offset(dist), root(_impl._start, dist),
-			                      _deferred_move(std::move(v)));
+			typename std::aligned_storage<sizeof(value_type),
+			                              alignof(value_type)>::type data[1];
+			new(data) value_type(std::move(val));
+			// code above may throw but will leave the tree in a consistent state
+			iterator tmp = _alloc_insert(*reinterpret_cast<const_value_pointer>(data));
+			std::memcpy(tmp->value_ptr(), data, sizeof(value_type));
+			return tmp;
 		}
 
-		std::size_t erase(const value_type&)
+		std::size_t erase(const value_type&) noexcept
 		{
 			--_impl._count;
 			return 0;
 		}
 
-		void erase(iterator)
+		void erase(iterator) noexcept
 		{
 			--_impl._count;
 		}

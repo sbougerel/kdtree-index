@@ -689,7 +689,6 @@ namespace kdtree_index
 		                         const iterator& node,
 		                         const value_type& val) const noexcept
 		{
-
 		}
 
 		/**

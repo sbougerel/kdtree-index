@@ -129,7 +129,7 @@ namespace kdtree_index
 	 *  State) and performance (fast dereferencing).
 	 */
 	enum class State : unsigned char
-	{ Invalid = 0x0, Heads = 0x1, Tails = 0x2, Unsure = 0x3};
+	{ Invalid = 0x0, Heads = 0x1, Tails = 0x2, Neither = 0x3};
 
 	/**
 	 *  Swap Invalid for Neutral or Tail for Heads and vice-versa.
@@ -142,7 +142,7 @@ namespace kdtree_index
 	 *  result is unchanged, but if both are different the result is unsure.
 	 */
 	inline State operator+ (State a, State b) noexcept
-	{ return (a == b) ? a : State::Unsure; }
+	{ return (a == b) ? a : State::Neither; }
 
 	template<typename ValuePtr, typename StatePtr>
 	class kdtree_iterator;
@@ -526,7 +526,7 @@ namespace kdtree_index
 			_impl._finish = _impl._start;
 		}
 
-		void _dealloc_storage()
+		void _dealloc_storage() noexcept
 		{
 			value_alloc_traits::deallocate
 				(_get_value_alloc(), _impl._start->value_ptr(), _impl._capacity);
@@ -629,12 +629,11 @@ namespace kdtree_index
 		 *  Destroy all items in the flat tree, calling the destructor for each
 		 *  value_type.
 		 *
-		 *  @note If a call to ~value_type() throws an exception, the behavior is
-		 *  undefined, as the tree is left partially initialized and most function
-		 *  may not work.
+		 *  @note If a call to ~value_type() throws an exception, the program will
+		 *  terminate since it will violate the noexcept condition. Simply stated,
+		 *  value_type destructor is not allowed to throw.
 		 */
-		void _destroy()
-			noexcept(std::is_nothrow_destructible<value_type>::value)
+		void _destroy() noexcept
 		{
 			for (iterator i = _impl._start; i != _impl._finish; ++i)
 			{ if (i->is_valid()) { i->value_ptr()->~value_type(); } }
@@ -664,7 +663,7 @@ namespace kdtree_index
 		{
 			while (node_offset != 0)
 			{
-				node->state() = State::Unsure;
+				node->state() = State::Neither;
 				if (select_compare(node_dim, insert->value(), node->value(),
 				                   get_index()))
 				{ node = left(node, node_offset); }
@@ -680,15 +679,80 @@ namespace kdtree_index
 		}
 
 		/**
-		 *  Find a position to insert v into the subtree (start, root) and balance
-		 *  all items along the way to make way for v.
+		 *  Remove the node pointed to by \ref erase from the tree.
+		 *
+		 *  @note If @ref val throws during the call to its destructor, the program
+		 *  will terminate since it violates the noexcept policy. Simply stated,
+		 *  @ref value_type destructor should not throw.
 		 */
-		template<typename DeferredOp>
-		iterator _erase_by_value(dimension_type node_dim,
-		                         typename iterator::difference_type offset,
-		                         const iterator& node,
-		                         const value_type& val) const noexcept
+		iterator _erase_iter(dimension_type node_dim,
+		                     typename iterator::difference_type offset,
+		                     const iterator& node,
+		                     const iterator& erase) const noexcept
 		{
+			iterator moved_erase;
+			if (offset > 1)
+			{
+				iterator lnode = left(node, offset);
+				iterator rnode = right(node, offset);
+				dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
+				typename iterator::difference_type child_offset = offset / 2;
+				if (erase != node)
+				{
+					// go to erase by memory locality
+					if (erase < node)
+					{
+						if (lnode->state() == ~_impl._full_state)
+						{
+							// Cannot erase in a free tree
+							_insert_when_free(child_dim, child_offset, lnode, node);
+							iterator tmp = minimum(node_dim, child_dim, child_offset,
+							                       rnode, get_index());
+							std::memcpy(node->value_ptr(), tmp->value_ptr(), sizeof(value_type));
+							_erase_iter(child_dim, child_offset, rnode, tmp);
+						}
+						else
+						{
+
+						}
+					}
+				}
+				else
+				{
+				}
+				node->state() = lnode->state() + rnode->state();
+			}
+			else if (offset == 1)
+			{
+				// If the line below throws, the program terminates
+				erase->value_ptr()->~value_type();
+				node->state() = (node->state() == State::Neither)
+					? ~_impl._full_state : State::Neither;
+				if (node != erase)
+				{ erase->state() = State::Invalid; }
+				else
+				{
+					iterator rnode = right(node, offset);
+					if (rnode->is_valid())
+					{
+						std::memcpy(node->value_ptr(), rnode->value_ptr(), sizeof(value_type));
+						rnode->state_ptr() = State::Invalid;
+					}
+					else
+					{
+						iterator lnode = left(node, offset);
+						std::memcpy(node->value_ptr(), lnode->value_ptr(), sizeof(value_type));
+						lnode->state_ptr() = State::Invalid;
+					}
+				}
+			}
+			else
+			{
+				// Node is necessarily equal to erase in this case
+				node->state() = State::Invalid;
+				// If the line below throw, the program terminates
+				node->value_ptr()->~value_type();
+			}
 		}
 
 		/**
@@ -704,7 +768,7 @@ namespace kdtree_index
 			{
 				dimension_type child_dim = inc<indexable_type::kth()>(node_dim);
 				typename iterator::difference_type child_offset = node_offset / 2;
-				node->state() = State::Unsure;
+				node->state() = State::Neither;
 				if (node == erased)
 				{
 					iterator rnode = right(node, node_offset);
@@ -733,7 +797,7 @@ namespace kdtree_index
 					rnode->state() = State::Invalid;
 				}
 				else { erased->state() = State::Invalid; }
-				node->state() = State::Unsure;
+				node->state() = State::Neither;
 			}
 			else
 			{ node->state() = State::Invalid; }
@@ -986,7 +1050,7 @@ namespace kdtree_index
 			_uninitialized_insert(l.begin(), l.end());
 		}
 
-		~kdtree()
+		~kdtree() noexcept
 		{
 			if (_impl._capacity != 0)
 			{
@@ -1015,19 +1079,18 @@ namespace kdtree_index
 		std::size_t size() const noexcept { return _impl._count; }
 		bool empty() const noexcept { return (size() == 0); }
 
-		void clear()
-			noexcept(std::is_nothrow_destructible<value_type>::value)
+		void clear() noexcept
 		{ if (_impl._count != 0) _destroy(); }
 
 		iterator
 		insert(const value_type& val)
 		{
 			typename std::aligned_storage<sizeof(value_type),
-			                              alignof(value_type)>::type data[1];
-			new(data) value_type(val);
+			                              alignof(value_type)>::type data;
+			::new(std::addressof(data)) value_type(val);
 			// code above may throw but will leave the tree in a consistent state
-			iterator tmp = _alloc_insert(*reinterpret_cast<const_value_pointer>(data));
-			std::memcpy(tmp->value_ptr(), data, sizeof(value_type));
+			iterator tmp = _alloc_insert(reinterpret_cast<const value_type&>(data));
+			std::memcpy(tmp->value_ptr(), std::addressof(data), sizeof(value_type));
 			return tmp;
 		}
 
@@ -1035,11 +1098,11 @@ namespace kdtree_index
 		insert(value_type&& val)
 		{
 			typename std::aligned_storage<sizeof(value_type),
-			                              alignof(value_type)>::type data[1];
-			new(data) value_type(std::move(val));
+			                              alignof(value_type)>::type data;
+			::new(std::addressof(data)) value_type(std::move(val));
 			// code above may throw but will leave the tree in a consistent state
-			iterator tmp = _alloc_insert(*reinterpret_cast<const_value_pointer>(data));
-			std::memcpy(tmp->value_ptr(), data, sizeof(value_type));
+			iterator tmp = _alloc_insert(reinterpret_cast<const value_type&>(data));
+			std::memcpy(tmp->value_ptr(), std::addressof(data), sizeof(value_type));
 			return tmp;
 		}
 

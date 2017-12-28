@@ -656,16 +656,15 @@ namespace kdtree_index
 		 *  This function is to be called only when node is free. It will find the
 		 *  position to insert value and set all nodes on the way to Unsure.
 		 */
-		void _insert_when_free(dimension_type node_dim,
-		                       typename iterator::difference_type node_offset,
-		                       iterator node, iterator insert)
+		iterator _insert_when_free(dimension_type node_dim,
+		                           typename iterator::difference_type node_offset,
+		                           iterator node, const value_type& val)
 			const noexcept
 		{
 			while (node_offset != 0)
 			{
 				node->state() = State::Neither;
-				if (select_compare(node_dim, insert->value(), node->value(),
-				                   get_index()))
+				if (select_compare(node_dim, val, node->value(), get_index()))
 				{ node = left(node, node_offset); }
 				else
 				{ node = right(node, node_offset); }
@@ -673,9 +672,7 @@ namespace kdtree_index
 				node_offset = node_offset / 2;
 			}
 			node->state() = _impl._full_state;
-			std::memcpy(node->value_ptr(), insert->value_ptr(),
-			            sizeof(value_type));
-			return;
+			return node;
 		}
 
 		/**
@@ -888,6 +885,8 @@ namespace kdtree_index
 						else
 						{ insert = node; }
 					}
+					else if (lnode->state() == ~_impl._full_state)
+					{ insert = _insert_when_free(child_dim, child_offset, lnode, val); }
 					else
 					{ insert = _place_insert(child_dim, child_offset, lnode, val); }
 				}
@@ -908,6 +907,8 @@ namespace kdtree_index
 						else
 						{ insert = node; }
 					}
+					else if (rnode->state() == ~_impl._full_state)
+					{ insert = _insert_when_free(child_dim, child_offset, rnode, val); }
 					else
 					{ insert = _place_insert(child_dim, child_offset, rnode, val); }
 				}
